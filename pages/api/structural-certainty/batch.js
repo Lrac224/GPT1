@@ -6,9 +6,9 @@ async function fetchJSON(url) {
   return r.json();
 }
 
-/* ===============================
+/* =========================
    STRUCTURAL LOGIC
-================================ */
+   ========================= */
 
 function deriveDirection({ shortVolRatio, shortInterestChange }) {
   if (shortVolRatio > 0.55 && shortInterestChange > 0) return "DOWN";
@@ -35,12 +35,17 @@ function deriveAllowedTrades(direction) {
     ];
   }
 
+  // ⚠️ THIS ARRAY MUST CLOSE BEFORE ANY FUNCTION
   return [
     "Mean reversion only",
     "Fade extremes into VWAP",
     "Avoid trend continuation trades"
   ];
-} // ✅ ARRAY IS CLOSED HERE — THIS WAS THE BUG
+}
+
+/* =========================
+   CONFIDENCE ENGINE
+   ========================= */
 
 function deriveConfidence({
   shortVolRatio,
@@ -51,44 +56,60 @@ function deriveConfidence({
 }) {
   let score = 0;
 
-  // A) Short pressure (0–40)
+  // Short pressure (0–40)
   if (shortVolRatio > 0.6) score += 20;
   if (shortInterestChange > 0) score += 20;
 
-  // B) Borrow stress (0–20)
-  if (borrowRate > 5) score += 10;
-  if (borrowRate > 10) score += 10;
+  // Borrow stress (0–20)
+  if (borrowRate > 5) score += 20;
+  else if (borrowRate > 2) score += 10;
 
-  // C) Regime alignment (0–20)
+  // Regime alignment (0–20)
   if (regime === "TREND" && direction !== "NEUTRAL") score += 20;
+  if (regime === "RANGE" && direction === "NEUTRAL") score += 10;
 
-  // D) Direction clarity (0–20)
+  // Directional clarity (0–20)
   if (direction !== "NEUTRAL") score += 20;
 
-  return Math.min(score, 100);
+  if (score >= 80) return "Very High";
+  if (score >= 60) return "High";
+  if (score >= 40) return "Moderate";
+  return "Low";
 }
 
-/* ===============================
+/* =========================
    API HANDLER
-================================ */
+   ========================= */
 
 export default async function handler(req, res) {
   try {
-    const { symbol = "SPY" } = req.query;
+    const symbol = (req.query.symbol || "SPY").toUpperCase();
 
-    const chainURL = `https://gpt-1-mu-five.vercel.app/api/cex/chain-summary?symbol=${symbol}`;
-    const chain = await fetchJSON(chainURL);
+    const data = await fetchJSON(
+      `https://chartexchange.com/api/v1/data/options/chain-summary/?symbol=${symbol}`
+    );
 
-    const inputs = {
-      shortVolRatio: chain.shortVolumeRatio ?? 0.5,
-      shortInterestChange: chain.shortInterestChange ?? 0,
-      borrowRate: chain.borrowRate ?? 0,
-      regime: chain.regime ?? "RANGE"
-    };
+    const row = data?.[0] || {};
 
-    const direction = deriveDirection(inputs);
-    const confidence = deriveConfidence({ ...inputs, direction });
+    const shortVolRatio = Number(row.short_volume_ratio ?? 0.5);
+    const shortInterestChange = Number(row.short_interest_change ?? 0);
+    const borrowRate = Number(row.borrow_rate ?? 0);
+    const regime = row.regime || "RANGE";
+
+    const direction = deriveDirection({
+      shortVolRatio,
+      shortInterestChange
+    });
+
     const allowedTrades = deriveAllowedTrades(direction);
+
+    const confidence = deriveConfidence({
+      shortVolRatio,
+      shortInterestChange,
+      borrowRate,
+      regime,
+      direction
+    });
 
     res.status(200).json({
       symbol,
