@@ -59,12 +59,12 @@ function deriveAllowedTrades(direction) {
     ];
   }
 
-  return [
-    "Mean reversion only",
-    "Fade extremes into VWAP",
-    "Avoid trend continuation trades"
-
-    function deriveConfidence({
+return [
+  "Mean reversion only",
+  "Fade extremes into VWAP",
+  "Avoid trend continuation trades"
+];
+   function deriveConfidence({
   shortVolRatio,
   shortInterestChange,
   borrowRate,
@@ -72,6 +72,8 @@ function deriveAllowedTrades(direction) {
   direction
 }) {
   let score = 0;
+  ...
+}
 
   // A) Short pressure (0–40)
   if (shortVolRatio > 0.60) score += 40;
