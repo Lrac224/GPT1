@@ -63,6 +63,49 @@ function deriveAllowedTrades(direction) {
     "Mean reversion only",
     "Fade extremes into VWAP",
     "Avoid trend continuation trades"
+
+    function deriveConfidence({
+  shortVolRatio,
+  shortInterestChange,
+  borrowRate,
+  regime,
+  direction
+}) {
+  let score = 0;
+
+  // A) Short pressure (0–40)
+  if (shortVolRatio > 0.60) score += 40;
+  else if (shortVolRatio > 0.55) score += 30;
+  else if (shortVolRatio > 0.50) score += 20;
+  else score += 10;
+
+  // B) Borrow stress (0–30)
+  if (borrowRate >= 5) score += 30;
+  else if (borrowRate >= 3) score += 20;
+  else if (borrowRate >= 1) score += 10;
+  else score += 5;
+
+  // C) Interest trend (0–20)
+  if (shortInterestChange > 0) score += 20;
+  else if (shortInterestChange === 0) score += 10;
+  else score += 5;
+
+  // D) Regime alignment (0–10)
+  const aligned =
+    (regime === "BEAR_CONTROLLED" && direction === "DOWN") ||
+    (regime === "BULL_CONTROLLED" && direction === "UP");
+
+  if (aligned) score += 10;
+
+  return score;
+}
+
+function confidenceBand(score) {
+  if (score >= 80) return "HIGH";
+  if (score >= 60) return "MEDIUM";
+  if (score >= 40) return "LOW";
+  return "VERY_LOW";
+}
   ];
 }
 
@@ -115,7 +158,10 @@ async function evaluateSymbol(symbol, base) {
       shortVolRatio,
       shortInterestChange,
       borrowRate
-    },
+   confidence: {
+  score: confidenceScore,
+  band: confidence
+},
     B_direction_gate: deriveDirectionGate(direction),
     C_execution_mode: deriveExecutionMode({ regime, direction }),
     D_allowed_trades: deriveAllowedTrades(direction),
@@ -127,6 +173,16 @@ async function evaluateSymbol(symbol, base) {
           : direction === "UP"
           ? "Fast downside reversals after long positioning"
           : "False breakouts in low-certainty regime"
+
+const confidenceScore = deriveConfidence({
+  shortVolRatio,
+  shortInterestChange,
+  borrowRate,
+  regime,
+  direction
+});
+
+const confidence = confidenceBand(confidenceScore);
     }
   };
 }
