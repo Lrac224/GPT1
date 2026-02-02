@@ -7,10 +7,9 @@ export async function POST(req) {
     return Response.json({ error: "missing_api_key" }, { status: 500 });
   }
 
-  const url =
-    `https://chartexchange.com/api/v1/data/options/chain-summary/` +
-    `?symbol=${symbol}&format=json&api_key=${apiKey}`;
-
+const url =
+  `https://chartexchange.com/api/v1/data/options/chain/` +
+  `?symbol=${symbol}&format=json&api_key=${apiKey}`;
   const r = await fetch(url, { cache: "no-store" });
   const text = await r.text();
 
