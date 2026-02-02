@@ -2,6 +2,12 @@ import { NextResponse } from "next/server";
 
 const DEFAULT_SYMBOLS = ["SPY", "QQQ", "IWM"];
 
+// --- simple helpers ---
+function pctMove(a, b) {
+  if (!a || !b) return 0;
+  return Math.abs((a - b) / b);
+}
+
 export async function POST(req) {
   let symbols = DEFAULT_SYMBOLS;
 
@@ -14,10 +20,10 @@ export async function POST(req) {
 
   const apiKey = process.env.CHARTEXCHANGE_API_KEY;
 
-  // ─────────────────────────────────────────────
-  // SAFE BASE RESPONSE (NO BIAS, NO DIRECTION)
-  // ─────────────────────────────────────────────
-  const baseResponse = {
+  // ─────────────────────────────
+  // BASE SAFE RESPONSE (NO BIAS)
+  // ─────────────────────────────
+  const response = {
     stressMap: {
       stress_side: "NEUTRAL",
       stress_location: "STRADDLED",
@@ -39,50 +45,87 @@ export async function POST(req) {
       daily_alignment: "UNKNOWN",
       checklist_complete: "NO",
       allowed_setups: [],
-      primary_risk: "Insufficient structural data",
+      primary_risk: "Insufficient structural confirmation",
       final_instruction: "NO_TRADE",
     },
   };
 
-  // If no API key → hard NO_TRADE
   if (!apiKey) {
-    return NextResponse.json(baseResponse);
+    return NextResponse.json(response);
   }
 
   try {
-    // Attempt to enrich Tool 1 ONLY (stress, not bias)
     for (const symbol of symbols) {
-      const url =
+      // ───────── Tool 1: Stress (front expiry only) ─────────
+      const chainUrl =
         `https://chartexchange.com/api/v1/data/options/chain-summary/` +
         `?symbol=${symbol}&format=json&api_key=${apiKey}`;
 
-      const r = await fetch(url, { cache: "no-store" });
-      if (!r.ok) continue;
+      const chainRes = await fetch(chainUrl, { cache: "no-store" });
+      if (chainRes.ok) {
+        const chain = await chainRes.json();
+        const row = chain?.[0];
 
-      const data = await r.json();
-      const row = data?.[0];
-      if (!row) continue;
+        if (row?.callsTotal && row?.putsTotal) {
+          response.stressMap = {
+            stress_side:
+              row.putsTotal > row.callsTotal
+                ? "PUT"
+                : row.callsTotal > row.putsTotal
+                ? "CALL"
+                : "NEUTRAL",
+            stress_location: "STRADDLED",
+            distance_to_stress: "MID",
+            authority: "HIGH",
+          };
+        }
+      }
 
-      // Minimal stress inference (still non-directional)
-      baseResponse.stressMap = {
-        stress_side:
-          row.putsTotal > row.callsTotal
-            ? "PUT"
-            : row.callsTotal > row.putsTotal
-            ? "CALL"
-            : "NEUTRAL",
-        stress_location: "STRADDLED",
-        distance_to_stress: "MID",
-        authority: "HIGH",
-      };
+      // ───────── Tool 2: Open Resolution (price behavior) ─────────
+      const quoteUrl =
+        `https://chartexchange.com/api/v1/quotes/${symbol}?api_key=${apiKey}`;
 
-      baseResponse.executionGate.primary_risk =
-        "Stress detected but no open resolution yet";
+      const quoteRes = await fetch(quoteUrl, { cache: "no-store" });
+      if (!quoteRes.ok) continue;
+
+      const q = await quoteRes.json();
+      const last = q?.last;
+      const prevClose = q?.prevClose;
+      const open = q?.open;
+
+      const openMove = pctMove(open, prevClose);
+      const lastMove = pctMove(last, prevClose);
+
+      // --- classify ---
+      if (openMove > 0.003 && lastMove >= openMove) {
+        response.openResolution = {
+          open_state: "DISPLACING",
+          interaction_with_stress: "NO",
+          early_volatility: "EXPANDING",
+        };
+
+        response.riskPermission = {
+          permission: "RESTRICT",
+          size_cap: "MINIMAL",
+          hold_cap: "OPEN_ONLY",
+          blocked_behaviors: ["REVERSAL", "FADE", "HOLD"],
+        };
+
+        response.executionGate.primary_risk =
+          "Open displacement overriding structural stress";
+      } else if (openMove > 0.001) {
+        response.openResolution = {
+          open_state: "RESOLVING",
+          interaction_with_stress: "YES",
+          early_volatility: "NORMAL",
+        };
+
+        response.riskPermission.permission = "RESTRICT";
+      }
     }
 
-    return NextResponse.json(baseResponse);
+    return NextResponse.json(response);
   } catch (err) {
-    // Any failure → NO_TRADE
-    return NextResponse.json(baseResponse);
+    return NextResponse.json(response);
   }
 }
