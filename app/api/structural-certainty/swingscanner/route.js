@@ -1,5 +1,6 @@
 import { fetchChainSummary } from "@/app/lib/fetchChainSummary";
 import { computeStructuralCertainty } from "@/app/lib/structuralCertaintyEngine";
+import { buildTradeChecklist } from "@/app/lib/buildTradeChecklist";
 
 export async function POST(req) {
   const { symbol } = await req.json();
@@ -11,17 +12,22 @@ export async function POST(req) {
 
   const chainSummary = await fetchChainSummary(symbol, apiKey);
 
-  const result = computeStructuralCertainty({
+  const baseResult = computeStructuralCertainty({
     symbol,
     chainSummary,
     mode: "SWING"
   });
 
-  // Swing-specific override (HARD RULE)
-  if (result.regime === "NEUTRAL") {
-    result.allowed = false;
-    result.reason = "DAILY_NOT_ALIGNED";
+  // HARD SWING RULE
+  if (baseResult.regime === "NEUTRAL") {
+    return Response.json({
+      symbol,
+      allowed: false,
+      reason: "DAILY_STRUCTURE_NOT_ALIGNED"
+    });
   }
 
-  return Response.json(result);
+  const checklist = buildTradeChecklist(baseResult);
+
+  return Response.json(checklist);
 }
