@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 export async function POST(req) {
-  let symbol = null;
+  let symbol;
 
   try {
     const body = await req.json();
@@ -16,7 +16,7 @@ export async function POST(req) {
     });
   }
 
-  // --- Call DAILY internally ---
+  // --- Call DAILY (authoritative) ---
   const dailyRes = await fetch(
     `${process.env.NEXT_PUBLIC_BASE_URL}/api/structural-certainty/daily`,
     {
@@ -36,11 +36,11 @@ export async function POST(req) {
       symbol,
       swingAllowed: false,
       reason: "daily_alignment_missing",
-      status: "BLOCKED",
+      status: "SWING_BLOCKED",
     });
   }
 
-  // --- Simple deterministic swing logic ---
+  // --- Deterministic swing permission ---
   const swingBias =
     bias === "SHORT_BIAS_INTRADAY" ? "SHORT_SWING_ONLY" : "NO_SWING";
 
