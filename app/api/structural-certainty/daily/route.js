@@ -1,4 +1,21 @@
-export async function POST(request) {
-  const body = await request.json();
-  return Response.json({ ok: true, type: "daily", body });
+import { fetchChainSummary } from "@/app/lib/fetchChainSummary";
+import { computeStructuralCertainty } from "@/app/lib/structuralCertaintyEngine";
+
+export async function POST(req) {
+  const { symbol } = await req.json();
+  const apiKey = process.env.CHARTEXCHANGE_API_KEY;
+
+  if (!apiKey) {
+    return Response.json({ error: "missing_api_key" }, { status: 500 });
+  }
+
+  const chainSummary = await fetchChainSummary(symbol, apiKey);
+
+  const result = computeStructuralCertainty({
+    symbol,
+    chainSummary,
+    mode: "DAILY"
+  });
+
+  return Response.json(result);
 }
