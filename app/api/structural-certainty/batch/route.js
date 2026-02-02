@@ -1,44 +1,65 @@
-export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "method_not_allowed" });
-  }
-
-  const { symbols } = req.body;
+export async function POST(req) {
+  const { symbols } = await req.json();
 
   if (!Array.isArray(symbols) || symbols.length === 0) {
-    return res.status(400).json({ error: "invalid_symbols" });
+    return Response.json({ error: "no_symbols" });
   }
 
   const apiKey = process.env.CHARTEXCHANGE_API_KEY;
   if (!apiKey) {
-    return res.status(500).json({ error: "missing_api_key" });
+    return Response.json({ error: "missing_api_key" });
   }
 
-  try {
-    const results = {};
+  const results = [];
 
-    for (const symbol of symbols) {
-      const url = `https://chartexchange.com/api/data/options/chain-summary/?symbol=${symbol}&format=json&api_key=${apiKey}`;
-      const r = await fetch(url);
-      if (!r.ok) throw new Error(`ChartExchange failed`);
+  for (const symbol of symbols) {
+    const url =
+      `https://chartexchange.com/api/v1/data/options/chain/` +
+      `?symbol=${symbol}&format=json&api_key=${apiKey}`;
 
-      const data = await r.json();
-
-      results[symbol] = {
-        symbol,
-        callOI: data.calls?.openInterest ?? null,
-        putOI: data.puts?.openInterest ?? null,
-        callPutRatio:
-          data.calls && data.puts
-            ? data.calls.openInterest / Math.max(data.puts.openInterest, 1)
-            : null,
-        source: "chartexchange",
-        timestamp: new Date().toISOString()
-      };
+    const r = await fetch(url, { cache: "no-store" });
+    if (!r.ok) {
+      results.push({ symbol, error: "data_unavailable" });
+      continue;
     }
 
-    res.status(200).json({ data: results });
-  } catch (e) {
-    res.status(502).json({ error: "data_unavailable", detail: e.message });
+    const data = await r.json();
+
+    let calls = 0;
+    let puts = 0;
+
+    for (const c of data) {
+      if (c.option_type === "call") calls += c.open_interest || 0;
+      if (c.option_type === "put") puts += c.open_interest || 0;
+    }
+
+    if (calls === 0 || puts === 0) {
+      results.push({ symbol, error: "insufficient_data" });
+      continue;
+    }
+
+    const pc_ratio = +(puts / calls).toFixed(2);
+
+    let regime = "TRANSITIONAL";
+    let direction = "NEUTRAL";
+
+    if (pc_ratio >= 2.0) {
+      regime = "BEAR_CONTROLLED";
+      direction = "SHORT_BIAS_INTRADAY";
+    } else if (pc_ratio <= 0.7) {
+      regime = "BULL_CONTROLLED";
+      direction = "LONG_BIAS_INTRADAY";
+    }
+
+    results.push({
+      symbol,
+      calls_total: calls,
+      puts_total: puts,
+      pc_ratio,
+      regime,
+      direction
+    });
   }
+
+  return Response.json({ results });
 }
