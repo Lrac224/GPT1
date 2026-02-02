@@ -1,37 +1,24 @@
-import { NextResponse } from "next/server";
-
 export async function POST(req) {
-  try {
-    const { symbol } = await req.json();
+  const { symbol } = await req.json();
 
-    if (!symbol) {
-      return NextResponse.json(
-        { error: "symbol_required" },
-        { status: 400 }
-      );
-    }
+  const apiKey = process.env.CHARTEXCHANGE_API_KEY;
 
-    const apiKey = process.env.CHARTEXCHANGE_API_KEY;
+  if (!apiKey) {
+    return Response.json({ error: "missing_api_key" }, { status: 500 });
+  }
 
-    if (!apiKey) {
-      return NextResponse.json(
-        { error: "missing_api_key" },
-        { status: 500 }
-      );
-    }
+  const url =
+    `https://chartexchange.com/api/v1/data/options/chain-summary/` +
+    `?symbol=${symbol}&format=json&api_key=${apiKey}`;
 
-    const url =
-      `https://chartexchange.com/api/data/options/chain-summary/` +
-      `?symbol=${symbol}&format=json&api_key=${apiKey}`;
+  const r = await fetch(url, { cache: "no-store" });
+  const text = await r.text();
 
-    const r = await fetch(url, { cache: "no-store" });
-
-    if (!r.ok) {
-      return NextResponse.json(
-        { error: "data_unavailable" },
-        { status: 502 }
-      );
-    }
+  return Response.json({
+    status: r.status,
+    raw: text.slice(0, 500)
+  });
+}
 
     const data = await r.json();
 
