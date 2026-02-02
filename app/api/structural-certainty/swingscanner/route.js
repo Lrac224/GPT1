@@ -1,33 +1,59 @@
-import { fetchChainSummary } from "@/app/lib/fetchChainSummary";
-import { computeStructuralCertainty } from "@/app/lib/structuralCertaintyEngine";
-import { buildTradeChecklist } from "@/app/lib/buildTradeChecklist";
+import { NextResponse } from "next/server";
 
 export async function POST(req) {
-  const { symbol } = await req.json();
-  const apiKey = process.env.CHARTEXCHANGE_API_KEY;
+  let symbol = null;
 
-  if (!apiKey) {
-    return Response.json({ error: "missing_api_key" }, { status: 500 });
-  }
+  try {
+    const body = await req.json();
+    symbol = body?.symbol;
+  } catch (_) {}
 
-  const chainSummary = await fetchChainSummary(symbol, apiKey);
-
-  const baseResult = computeStructuralCertainty({
-    symbol,
-    chainSummary,
-    mode: "SWING"
-  });
-
-  // HARD SWING RULE
-  if (baseResult.regime === "NEUTRAL") {
-    return Response.json({
-      symbol,
-      allowed: false,
-      reason: "DAILY_STRUCTURE_NOT_ALIGNED"
+  if (!symbol) {
+    return NextResponse.json({
+      status: "ERROR",
+      reason: "symbol_required",
+      swingAllowed: false,
     });
   }
 
-  const checklist = buildTradeChecklist(baseResult);
+  // --- Call DAILY internally ---
+  const dailyRes = await fetch(
+    `${process.env.NEXT_PUBLIC_BASE_URL}/api/structural-certainty/daily`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ symbols: [symbol] }),
+      cache: "no-store",
+    }
+  );
 
-  return Response.json(checklist);
+  const daily = await dailyRes.json();
+
+  const bias = daily?.directionGate?.[symbol];
+
+  if (!bias) {
+    return NextResponse.json({
+      symbol,
+      swingAllowed: false,
+      reason: "daily_alignment_missing",
+      status: "BLOCKED",
+    });
+  }
+
+  // --- Simple deterministic swing logic ---
+  const swingBias =
+    bias === "SHORT_BIAS_INTRADAY" ? "SHORT_SWING_ONLY" : "NO_SWING";
+
+  return NextResponse.json({
+    symbol,
+    dailyBias: bias,
+    swingBias,
+    executionWindow: "2–5 days",
+    preferredStructures: [
+      "Failed bounce into resistance",
+      "Put-side dominance with flat call OI",
+    ],
+    invalidation: "Strong trend reclaim against bias",
+    status: "SWING_ENABLED",
+  });
 }
