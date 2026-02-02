@@ -1,33 +1,49 @@
+// pages/api/structural-certainty/batch.js
+
+export const config = {
+  api: {
+    bodyParser: true,
+  },
+};
+
 export default async function handler(req, res) {
   try {
     if (req.method !== "POST") {
       return res.status(405).json({ error: "Method not allowed" });
     }
 
+    if (!req.body) {
+      return res.status(400).json({
+        error: "Request body missing",
+        example: { symbols: ["IWM", "SPY", "QQQ"] }
+      });
+    }
+
     const { symbols } = req.body;
 
     if (!Array.isArray(symbols) || symbols.length === 0) {
       return res.status(400).json({
-        error: "Invalid request",
-        detail: "symbols must be a non-empty array"
+        error: "Missing or invalid symbols parameter",
+        example: { symbols: ["IWM", "SPY", "QQQ"] }
       });
     }
 
-    // --- MOCK STRUCTURAL LOGIC (replace later) ---
-    const results = symbols.map(symbol => ({
+    // ---- TEMP STRUCTURAL MOCK (replace later) ----
+    const results = symbols.map((symbol) => ({
       symbol,
-      regime: "TREND",
-      direction: "UP",
-      confidence: 72,
-      execution_mode: "STRUCTURAL_CONTINUATION",
-      allowed_trades: ["CALL_SWING", "CALL_DIAGONAL"],
-      primary_risk: "Momentum failure or volatility contraction"
+      regime: "BALANCED",
+      direction: "NEUTRAL",
+      confidence: 50,
+      allowed_trades: ["mean_reversion"]
     }));
 
-    return res.status(200).json({ results });
+    return res.status(200).json({
+      ok: true,
+      count: results.length,
+      data: results
+    });
 
   } catch (err) {
-    console.error("Batch error:", err);
     return res.status(500).json({
       error: "Structural certainty batch failed",
       detail: err.message
