@@ -1,0 +1,116 @@
+openapi: 3.1.0
+info:
+  title: Structural Certainty API
+  description: >
+    Backend API for Structural Certainty GPT.
+    Returns raw, observable market structure data only.
+    No inference, prediction, ranking, or confidence calculation is performed.
+  version: "1.0.0"
+
+servers:
+  - url: https://gpt-1-mu.vercel.app
+
+paths:
+  /api/structural-certainty/batch:
+    post:
+      operationId: getStructuralCertaintyBatch
+      summary: Fetch daily structural certainty data for symbols
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - symbols
+              properties:
+                symbols:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: string
+                  description: Array of equity, ETF, or index tickers
+      responses:
+        "200":
+          description: Daily structural certainty data
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - mode
+                  - results
+                properties:
+                  mode:
+                    type: string
+                    enum: [daily]
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                        - symbol
+                      properties:
+                        symbol:
+                          type: string
+                        chain_summary:
+                          type: object
+                          additionalProperties: true
+                        error:
+                          type: string
+        "400":
+          description: Invalid request
+        "503":
+          description: Data unavailable
+
+  /api/structural-certainty/swingscanner:
+    post:
+      operationId: swingScanner
+      summary: Fetch swing scanner structural data for symbols
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - symbols
+              properties:
+                symbols:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: string
+                  description: Array of equity, ETF, or index tickers
+      responses:
+        "200":
+          description: Swing scanner structural data
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - mode
+                  - results
+                properties:
+                  mode:
+                    type: string
+                    enum: [swing]
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                        - symbol
+                      properties:
+                        symbol:
+                          type: string
+                        chain_summary:
+                          type: object
+                          additionalProperties: true
+                        error:
+                          type: string
+        "400":
+          description: Invalid request
+        "503":
+          description: Data unavailable
