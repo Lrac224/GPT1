@@ -1,74 +1,51 @@
-export async function POST(request) {
-  let body;
-
-  try {
-    body = await request.json();
-  } catch {
-    return Response.json(
-      { error: "invalid_json" },
-      { status: 400 }
-    );
+export default async function handler(req, res) {
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "method_not_allowed" });
   }
 
-  const { symbols } = body ?? {};
+  const { symbols } = req.body;
 
   if (!Array.isArray(symbols) || symbols.length === 0) {
-    return Response.json(
-      { error: "symbols_required" },
-      { status: 400 }
-    );
+    return res.status(400).json({ error: "invalid_symbols" });
   }
 
   const apiKey = process.env.CHARTEXCHANGE_API_KEY;
 
   if (!apiKey) {
-    return Response.json(
-      { error: "missing_api_key" },
-      { status: 500 }
-    );
+    return res.status(500).json({ error: "missing_api_key" });
   }
 
-  const results = [];
+  try {
+    const results = {};
 
-  for (const symbol of symbols) {
-    try {
-  const url =
-  `https://chartexchange.com/api/v1/data/options/max-pain/` +
-  `?symbol=${symbol}&format=json&api_key=${apiKey}`;
+    for (const symbol of symbols) {
+      const url = `https://chartexchange.com/api/data/options/chain-summary/?symbol=${symbol}&format=json&api_key=${apiKey}`;
 
-      const res = await fetch(url);
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(`ChartExchange failed for ${symbol}`);
 
-      if (!res.ok) {
-        results.push({
-          symbol,
-          error: "chart_exchange_failed"
-        });
-        continue;
-      }
+      const data = await r.json();
 
-      const data = await res.json();
-
-      results.push({
+      results[symbol] = {
         symbol,
-        chain_summary: data
-      });
-    } catch {
-      results.push({
-        symbol,
-        error: "fetch_exception"
-      });
+        totalCallOI: data.calls?.openInterest ?? null,
+        totalPutOI: data.puts?.openInterest ?? null,
+        callPutRatio: data.calls && data.puts
+          ? data.calls.openInterest / Math.max(data.puts.openInterest, 1)
+          : null,
+        timestamp: new Date().toISOString()
+      };
     }
-  }
 
-  if (results.every(r => r.error)) {
-    return Response.json(
-      { error: "data_unavailable" },
-      { status: 503 }
-    );
-  }
+    return res.status(200).json({
+      source: "chartexchange:chain-summary",
+      data: results
+    });
 
-  return Response.json({
-    mode: "daily",
-    results
-  });
+  } catch (err) {
+    return res.status(502).json({
+      error: "data_unavailable",
+      detail: err.message
+    });
+  }
 }
