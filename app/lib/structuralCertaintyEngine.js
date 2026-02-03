@@ -85,9 +85,21 @@ const rawConfidence =
   0.3 * volumeStrength +
   0.3 * dealerAlignment;
 
-const confidence = Number(
-  (Number.isFinite(rawConfidence) ? rawConfidence : 0).toFixed(2)
-);
+const finalConfidence = confidence;
+
+if (finalConfidence < 0.6) {
+  return {
+    regime,
+    bias: {
+      direction: "NEUTRAL",
+      confidence: finalConfidence,
+      disallowed: ["LONG", "SHORT"],
+      drivers: []
+    },
+    executionMode: "NO_TRADE",
+    invalidation
+  };
+}
 
   return {
     regime: volumeExpansion ? "TREND" : "RANGE",
