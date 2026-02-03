@@ -1,5 +1,19 @@
+/**
+ * fetchChainSummary
+ *
+ * Uses ChartExchange `/data/options/chain-summary`
+ * This endpoint implicitly returns the FRONT / NEAREST active expiration.
+ * DO NOT pass expiration. DO NOT resolve expirations separately.
+ */
+
 export async function fetchChainSummary(symbol, apiKey) {
-  if (!apiKey) throw new Error("Missing API key");
+  if (!symbol) {
+    throw new Error("fetchChainSummary: missing symbol");
+  }
+
+  if (!apiKey) {
+    throw new Error("fetchChainSummary: missing CHARTEXCHANGE_API_KEY");
+  }
 
   const url =
     `https://chartexchange.com/api/v1/data/options/chain-summary/` +
@@ -7,36 +21,35 @@ export async function fetchChainSummary(symbol, apiKey) {
     `&format=json` +
     `&api_key=${apiKey}`;
 
-  const r = await fetch(url, { cache: "no-store" });
-  if (!r.ok) {
-    throw new Error(`Chain summary HTTP ${r.status} for ${symbol}`);
+  console.log("[CHAIN_SUMMARY_REQUEST]", { symbol, url });
+
+  const response = await fetch(url, { cache: "no-store" });
+
+  if (!response.ok) {
+    console.error(
+      "[CHAIN_SUMMARY_HTTP_ERROR]",
+      symbol,
+      response.status
+    );
+    throw new Error(`Chain summary HTTP ${response.status} for ${symbol}`);
   }
 
-  const data = await r.json();
+  const data = await response.json();
+
   if (!Array.isArray(data) || data.length === 0) {
-    throw new Error("Empty chain summary");
-  }
-
-  return data[0]; // front month implicitly
-}
-    // 🔒 NORMALIZED EMPTY RES............................ULT
-    return {
-      totalCallOI: 0,
-      totalPutOI: 0,
-      callOIDelta: 0,
-      putOIDelta: 0,
-      dealerGamma: 0
-    };
+    console.error("[CHAIN_SUMMARY_EMPTY]", symbol);
+    throw new Error(`Empty chain summary for ${symbol}`);
   }
 
   const row = data[0];
 
-  // 🔒 HARD NORMALIZATION LAYER
-  return {
-    totalCallOI: Number(row.call_open_interest ?? 0),
-    totalPutOI: Number(row.put_open_interest ?? 0),
-    callOIDelta: Number(row.call_open_interest_change ?? 0),
-    putOIDelta: Number(row.put_open_interest_change ?? 0),
-    dealerGamma: Number(row.dealer_gamma ?? 0)
-  };
+  console.log("[CHAIN_SUMMARY_OK]", {
+    symbol,
+    pc_ratio: row.pc_ratio,
+    calls_total: row.calls_total,
+    puts_total: row.puts_total,
+    max_pain: row.max_pain
+  });
+
+  return row;
 }
