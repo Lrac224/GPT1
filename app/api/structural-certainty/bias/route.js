@@ -4,6 +4,10 @@ import { fetchChainSummary } from "../../../lib/fetchChainSummary";
 import { fetchExchangeVolume } from "../../../lib/fetchExchangeVolume";
 import { structuralCertaintyEngine } from "../../../lib/structuralCertaintyEngine";
 
+/**
+ * GET /api/structural-certainty/bias?symbol=IWM
+ * Returns directional bias ONLY
+ */
 export async function GET(req) {
   try {
     const { searchParams } = new URL(req.url);
@@ -11,7 +15,7 @@ export async function GET(req) {
 
     if (!symbol) {
       return NextResponse.json(
-        { error: "symbol required" },
+        { error: "symbol query param required" },
         { status: 400 }
       );
     }
