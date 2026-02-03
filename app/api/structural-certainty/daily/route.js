@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
-import { structuralCertaintyEngine } from "@/app/lib/structuralCertaintyEngine";
-import { dailyNarrativeBuilder } from "@/app/lib/dailyNarrativeBuilder";
-import { fetchChainSummary } from "@/app/lib/fetchChainSummary";
-import { fetchExchangeVolume } from "@/app/lib/fetchExchangeVolume";
+
+import { structuralCertaintyEngine } from "../../../lib/structuralCertaintyEngine";
+import { dailyNarrativeBuilder } from "../../../lib/dailyNarrativeBuilder";
+import { fetchChainSummary } from "../../../lib/fetchChainSummary";
+import { fetchExchangeVolume } from "../../../lib/fetchExchangeVolume";
 
 export async function GET(req) {
   try {
