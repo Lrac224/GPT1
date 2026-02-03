@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { fetchChainSummary } from "../../../lib/fetchChainSummary";
-import { runStructuralCertainty } from "../../../lib/structuralCertaintyEngine";
+import { computeStructuralCertainty } from "../../../lib/structuralCertaintyEngine";
 
 const DEFAULT_SYMBOLS = ["QQQ", "SPY", "IWM"];
 
