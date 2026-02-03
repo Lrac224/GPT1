@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { fetchChainSummary } from "../../../lib/fetchChainSummary";
 import { fetchExchangeVolume } from "../../../lib/fetchExchangeVolume";
-import { computeStructuralCertainty } from "../../../lib/structuralCertaintyEngine";
+import { structuralCertaintyEngine } from "../../../lib/structuralCertaintyEngine";
 
 /* -------------------------------------------------------
    One-week authority resolver (Friday, holiday-safe stub)
@@ -27,7 +27,7 @@ export async function POST(req) {
     const apiKey = process.env.CHARTEXCHANGE_API_KEY;
     const expiration = getNextFriday();
 
-    const results = [];
+  const result = structuralCertaintyEngine(...)
 
     for (const symbol of symbols) {
       console.log("[DAILY_CHAIN_REQUEST]", {
