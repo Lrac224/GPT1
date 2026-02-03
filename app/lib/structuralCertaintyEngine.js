@@ -1,58 +1,73 @@
+/**
+ * Structural Certainty Engine
+ * ---------------------------
+ * Purpose:
+ *  - Authorize or deny directional risk
+ *  - NO narrative
+ *  - NO inference
+ *  - Deterministic, repeatable
+ *
+ * Outputs:
+ *  - bias.direction
+ *  - bias.confidence (0.00 – 1.00)
+ *  - executionMode (DAY | NO_TRADE)
+ */
+
 export function structuralCertaintyEngine({ chain, volume }) {
   if (!chain || !volume) {
     throw new Error("Missing inputs to structuralCertaintyEngine");
   }
 
-  // -----------------------------
-  // Destructure normalized inputs
-  // -----------------------------
+  // =============================
+  // Normalized Inputs
+  // =============================
   const {
-    totalCallOI,
-    totalPutOI,
-    callOIDelta,
-    putOIDelta,
-    dealerGamma
+    totalCallOI = 0,
+    totalPutOI = 0,
+    callOIDelta = 0,
+    putOIDelta = 0,
+    dealerGamma = 0
   } = chain;
 
   const {
-    todayVolume,
-    avg20Volume
+    todayVolume = 0,
+    avg20Volume = 0
   } = volume;
 
-  // -----------------------------
-  // Directional determination
-  // -----------------------------
+  // =============================
+  // Direction Determination
+  // =============================
   let direction = "NEUTRAL";
   let drivers = [];
 
   if (totalCallOI > totalPutOI && callOIDelta > 0) {
     direction = "LONG_ONLY";
     drivers.push("CALL_OI_DOMINANCE");
-  } else if (totalPutOI > totalCallOI && putOIDelta > 0) {
+  }
+
+  if (totalPutOI > totalCallOI && putOIDelta > 0) {
     direction = "SHORT_ONLY";
     drivers.push("PUT_OI_DOMINANCE");
   }
 
-  // Dealer positioning
-  const positiveDealer = dealerGamma > 0;
-  const negativeDealer = dealerGamma < 0;
+  // Dealer alignment (binary, structural)
+  const dealerAligned =
+    (direction === "LONG_ONLY" && dealerGamma > 0) ||
+    (direction === "SHORT_ONLY" && dealerGamma < 0);
 
-  if (direction === "LONG_ONLY" && positiveDealer) {
-    drivers.push("DEALER_LONG_ALIGNMENT");
+  if (dealerAligned) {
+    drivers.push("DEALER_ALIGNMENT");
   }
 
-  if (direction === "SHORT_ONLY" && negativeDealer) {
-    drivers.push("DEALER_SHORT_ALIGNMENT");
-  }
+  // =============================
+  // Confidence Calculation
+  // (single source of truth)
+  // =============================
+  const oiDenominator = totalCallOI + totalPutOI;
 
-  // -----------------------------
-  // Confidence calculation
-  // (SINGLE SOURCE OF TRUTH)
-  // -----------------------------
-  const oiDenom = totalCallOI + totalPutOI;
   const oiStrength =
-    oiDenom > 0
-      ? Math.abs(totalCallOI - totalPutOI) / oiDenom
+    oiDenominator > 0
+      ? Math.abs(totalCallOI - totalPutOI) / oiDenominator
       : 0;
 
   const volumeStrength =
@@ -60,31 +75,26 @@ export function structuralCertaintyEngine({ chain, volume }) {
       ? Math.min(1, todayVolume / avg20Volume)
       : 0;
 
-  const dealerAlignment =
-    direction === "LONG_ONLY"
-      ? (positiveDealer ? 1 : 0)
-      : direction === "SHORT_ONLY"
-      ? (negativeDealer ? 1 : 0)
-      : 0;
+  const dealerStrength = dealerAligned ? 1 : 0;
 
   const confidence = Number(
     (
       0.4 * oiStrength +
       0.3 * volumeStrength +
-      0.3 * dealerAlignment
+      0.3 * dealerStrength
     ).toFixed(2)
   );
 
-  // -----------------------------
-  // Invalidation logic
-  // -----------------------------
+  // =============================
+  // Invalidation Rule
+  // =============================
   const invalidation =
-    "OI dominance flip or loss of exchange volume expansion";
+    "OI dominance flip or loss of volume participation";
 
-  // -----------------------------
-  // HARD NO-TRADE ENFORCEMENT
-  // -----------------------------
-  if (confidence < 0.6 || direction === "NEUTRAL") {
+  // =============================
+  // HARD AUTHORIZATION GATE
+  // =============================
+  if (direction === "NEUTRAL" || confidence < 0.6) {
     return {
       regime: "TRANSITION",
       bias: {
@@ -98,9 +108,9 @@ export function structuralCertaintyEngine({ chain, volume }) {
     };
   }
 
-  // -----------------------------
-  // Directional return (allowed)
-  // -----------------------------
+  // =============================
+  // Authorized Direction
+  // =============================
   return {
     regime: "DIRECTIONAL",
     bias: {
