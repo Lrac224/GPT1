@@ -1,19 +1,16 @@
 import { NextResponse } from "next/server";
-
-import { structuralCertaintyEngine } from "../../../lib/structuralCertaintyEngine";
-import { dailyNarrativeBuilder } from "../../../lib/dailyNarrativeBuilder";
 import { fetchChainSummary } from "../../../lib/fetchChainSummary";
 import { fetchExchangeVolume } from "../../../lib/fetchExchangeVolume";
-import { resolveFrontMonthExpiration } from "../../../lib/resolveFrontMonthExpiration";
+import { structuralCertaintyEngine } from "../../../lib/structuralCertaintyEngine";
 
 export async function GET(req) {
   try {
     const { searchParams } = new URL(req.url);
-    const symbol = searchParams.get("symbol");
+    const symbol = searchParams.get("symbol")?.toUpperCase();
 
     if (!symbol) {
       return NextResponse.json(
-        { error: "Missing symbol parameter" },
+        { error: "Missing symbol" },
         { status: 400 }
       );
     }
@@ -26,47 +23,22 @@ export async function GET(req) {
       );
     }
 
-    // ---- REQUIRED: you must resolve expiration BEFORE chain fetch
-    const expiration = await resolveFrontMonthExpiration(symbol, apiKey);
-    if (!expiration) {
-      return NextResponse.json(
-        { error: "Failed to resolve expiration" },
-        { status: 500 }
-      );
-    }
+    // 🔑 NO expiration resolution
+    const chain = await fetchChainSummary(symbol, apiKey);
+    const exchangeVolume = await fetchExchangeVolume(symbol, apiKey);
 
-    const chain = await fetchChainSummary(symbol, expiration, apiKey);
-    const volume = await fetchExchangeVolume(symbol, apiKey);
-
-    if (!chain || !volume) {
-      return NextResponse.json(
-        { error: "Failed to fetch market data" },
-        { status: 500 }
-      );
-    }
-
-    const structuralCertainty = structuralCertaintyEngine({
-      chain,
-      volume
-    });
-
-    const dailyNarrative = dailyNarrativeBuilder({
+    const result = structuralCertaintyEngine({
       symbol,
       chain,
-      regime: structuralCertainty.regime
+      exchangeVolume
     });
 
-    // ✅ THIS RETURN IS MANDATORY
-    return NextResponse.json({
-      symbol,
-      structuralCertainty,
-      dailyNarrative
-    });
+    return NextResponse.json(result);
 
   } catch (err) {
-    // ✅ THIS CATCH IS MANDATORY
+    console.error("[DAILY_ROUTE_ERROR]", err);
     return NextResponse.json(
-      { error: err.message || "Unhandled error" },
+      { error: err.message || "Internal error" },
       { status: 500 }
     );
   }
