@@ -1,124 +1,59 @@
 import { NextResponse } from "next/server";
-import { fetchChainSummary } from "../../../lib/fetchChainSummary";
-import { computeStructuralCertainty } from "../../../lib/structuralCertaintyEngine";
+import { fetchChainSummary } from "@/lib/fetchChainSummary";
+import { runStructuralCertainty } from "@/lib/structuralCertaintyEngine";
 
-const DEFAULT_SYMBOLS = ["QQQ", "SPY", "IWM"];
+function getNextFriday(date = new Date()) {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = (5 - day + 7) % 7 || 7;
+  d.setDate(d.getDate() + diff);
+  return d.toISOString().slice(0, 10);
+}
 
 export async function POST(req) {
-  let symbols = DEFAULT_SYMBOLS;
-
-  // ─────────────────────────────────────────────
-  // Parse request body (symbols optional)
-  // ─────────────────────────────────────────────
   try {
-    const body = await req.json();
-    if (Array.isArray(body?.symbols) && body.symbols.length > 0) {
-      symbols = body.symbols;
+    const { symbols } = await req.json();
+
+    if (!symbols || !Array.isArray(symbols)) {
+      return NextResponse.json(
+        { error: "symbols array required" },
+        { status: 400 }
+      );
     }
-  } catch (_) {
-    // no body → report mode defaults
-  }
 
-  const apiKey = process.env.CHARTEXCHANGE_API_KEY;
+    const expiration = getNextFriday();
+    const apiKey = process.env.CHARTEXCHANGE_API_KEY;
 
-  // ─────────────────────────────────────────────
-  // If no API key, return safe NO_TRADE report
-  // ─────────────────────────────────────────────
-  if (!apiKey) {
-    return NextResponse.json(buildNoDataResponse(symbols, "NO_API_KEY"));
-  }
+    const results = [];
 
-  const results = [];
-
-  // ─────────────────────────────────────────────
-  // Main execution loop
-  // ─────────────────────────────────────────────
-  for (const symbol of symbols) {
-    try {
-      // 🔎 PROOF: this must appear in Vercel logs
-      console.log("[DAILY] fetching chain summary for", symbol);
-
-      const chainSummary = await fetchChainSummary(symbol, apiKey);
-
-      if (!chainSummary) {
-        results.push(buildNoDataSymbolResult(symbol, "CHAIN_SUMMARY_NULL"));
-        continue;
-      }
-
-      console.log("[DAILY] live OI data", symbol, {
-        callsTotal: chainSummary.callsTotal,
-        putsTotal: chainSummary.putsTotal,
-        maxPain: chainSummary.maxPain,
+    for (const symbol of symbols) {
+      const chainSummary = await fetchChainSummary({
+        symbol,
+        expiration,
+        apiKey
       });
 
-      // Delegate ALL logic to engine
-      const engineResult = computeStructuralCertainty({
-  symbol,
-  chainSummary,
-  context: "INTRADAY",
-});
+      const report = runStructuralCertainty({
+        symbol,
+        expiration,
+        chainSummary
+      });
 
-      // Attach hard proof markers
-      engineResult.executionGate.data_source = "LIVE_CHARTEXCHANGE";
-      engineResult.executionGate.data_timestamp =
-        new Date().toISOString();
-
-      results.push(engineResult);
-    } catch (err) {
-      console.error("[DAILY] ERROR", symbol, err);
-      results.push(buildNoDataSymbolResult(symbol, "FETCH_ERROR"));
+      results.push(report);
     }
+
+    return NextResponse.json({
+      mode: "REPORT",
+      expiration,
+      symbols,
+      results
+    });
+
+  } catch (err) {
+    console.error("[DAILY_ROUTE_ERROR]", err);
+    return NextResponse.json(
+      { error: "Internal error" },
+      { status: 500 }
+    );
   }
-
-  // ─────────────────────────────────────────────
-  // Final REPORT response
-  // ─────────────────────────────────────────────
-  return NextResponse.json({
-    mode: "REPORT",
-    symbols,
-    results,
-  });
-}
-
-/* ───────────────────────────────────────────── */
-/* HELPERS                                      */
-/* ───────────────────────────────────────────── */
-
-function buildNoDataResponse(symbols, reason) {
-  return {
-    mode: "REPORT",
-    symbols,
-    results: symbols.map((s) => buildNoDataSymbolResult(s, reason)),
-  };
-}
-
-function buildNoDataSymbolResult(symbol, reason) {
-  return {
-    symbol,
-    stressMap: {
-      stress_side: "NEUTRAL",
-      stress_location: "STRADDLED",
-      distance_to_stress: "FAR",
-      authority: "LOW",
-    },
-    openResolution: {
-      open_state: "UNRESOLVED",
-      interaction_with_stress: "NO",
-      early_volatility: "NORMAL",
-    },
-    riskPermission: {
-      permission: "BLOCK",
-      size_cap: "MINIMAL",
-      hold_cap: "OPEN_ONLY",
-      blocked_behaviors: ["REVERSAL", "FADE", "HOLD"],
-    },
-    executionGate: {
-      daily_alignment: "UNKNOWN",
-      checklist_complete: "NO",
-      allowed_setups: [],
-      primary_risk: "Insufficient structural confirmation",
-      final_instruction: "NO_TRADE",
-      data_source: reason,
-    },
-  };
 }
