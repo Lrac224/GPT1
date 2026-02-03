@@ -58,50 +58,41 @@ export function structuralCertaintyEngine({
     disallowed = ["LONG", "SHORT"];
   }
 
-  // ---------- CONFIDENCE MODEL ----------
-  let confidence = 0;
+ 
+ // ---------- CONFIDENCE MODEL ----------
+let confidence = 0;
 
-  if (calls_total > 0 && puts_total > 0) {
-    const flowImbalance =
-      Math.abs(calls_total - puts_total) /
-      (calls_total + puts_total);
+// Base confidence from PC ratio alone
+if (pc_ratio >= 1.6 || pc_ratio <= 0.65) {
+  confidence += Math.min(40, Math.abs(pc_ratio - 1) * 20);
+}
 
-    const itmImbalance =
-      Math.abs(itm_calls - itm_puts) /
-      Math.max(1, itm_calls + itm_puts);
+// Flow imbalance (if totals exist)
+if (calls_total > 0 && puts_total > 0) {
+  const flowImbalance =
+    Math.abs(calls_total - puts_total) /
+    (calls_total + puts_total);
 
-    const pcDeviation = Math.abs(pc_ratio - 1);
+  confidence += flowImbalance * 30;
+}
 
-    confidence = Math.round(
-      flowImbalance * 45 +
-      itmImbalance * 35 +
-      pcDeviation * 30
-    );
+// ITM confirmation (optional boost, NOT required)
+if (itm_calls + itm_puts > 0) {
+  const itmImbalance =
+    Math.abs(itm_calls - itm_puts) /
+    (itm_calls + itm_puts);
 
-    confidence = Math.min(100, confidence);
-  }
+  confidence += itmImbalance * 30;
+}
 
-  if (!Number.isFinite(confidence)) confidence = 0;
+confidence = Math.min(100, Math.round(confidence));
 
-  // ---------- DRIVERS ----------
-  const drivers = [];
-
-  if (pc_ratio >= 1.4) drivers.push("heavy_put_dominance");
-  if (pc_ratio <= 0.75) drivers.push("heavy_call_dominance");
-
-  if (itm_puts > itm_calls) drivers.push("itm_put_control");
-  if (itm_calls > itm_puts) drivers.push("itm_call_control");
-
-  if (exchangeVolume?.trend === "EXPANDING") {
-    drivers.push("exchange_volume_expansion");
-  }
-
-  // ---------- CONFIDENCE FLOOR ----------
-  if (confidence < 18) {
-    direction = "NO_TRADE";
-    disallowed = ["LONG", "SHORT"];
-    drivers.push("low_structural_conviction");
-  }
+// ---------- CONFIDENCE FLOOR ----------
+if (confidence < 12) {
+  direction = "NO_TRADE";
+  disallowed = ["LONG", "SHORT"];
+  drivers.push("low_structural_conviction");
+}
 
   // ---------- EXECUTION MODE ----------
   let execution = "NONE";
