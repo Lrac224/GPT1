@@ -1,14 +1,27 @@
 /**
  * fetchChainSummary
  *
- * ChartExchange endpoint:
- *   /api/v1/data/options/chain-summary
- *
- * IMPORTANT:
- * - Uses `symbol=US:XXX` (NOT underlying)
- * - No expiration parameter
- * - Returns nearest/front active expiration implicitly
+ * ChartExchange is inconsistent about parameter naming.
+ * This function safely tries both supported formats.
  */
+
+async function tryFetch(url, symbol) {
+  const response = await fetch(url, { cache: "no-store" });
+
+  if (!response.ok) {
+    const text = await response.text();
+    console.error("[CHAIN_SUMMARY_HTTP_ERROR]", symbol, response.status, text);
+    return null;
+  }
+
+  const data = await response.json();
+  if (!Array.isArray(data) || data.length === 0) {
+    console.error("[CHAIN_SUMMARY_EMPTY]", symbol, data);
+    return null;
+  }
+
+  return data[0];
+}
 
 export async function fetchChainSummary(symbol, apiKey) {
   if (!symbol) {
@@ -19,57 +32,30 @@ export async function fetchChainSummary(symbol, apiKey) {
     throw new Error("fetchChainSummary: missing CHARTEXCHANGE_API_KEY");
   }
 
-  const url =
+  // Attempt 1: symbol param
+  const urlSymbol =
     "https://chartexchange.com/api/v1/data/options/chain-summary/" +
     `?symbol=US:${symbol}` +
     "&format=json" +
     `&api_key=${apiKey}`;
 
-  console.log("[CHAIN_SUMMARY_REQUEST]", { symbol, url });
+  console.log("[CHAIN_SUMMARY_TRY_SYMBOL]", urlSymbol);
 
-  const response = await fetch(url, { cache: "no-store" });
+  let row = await tryFetch(urlSymbol, symbol);
+  if (row) return row;
 
-  if (!response.ok) {
-    const text = await response.text();
-    console.error(
-      "[CHAIN_SUMMARY_HTTP_ERROR]",
-      symbol,
-      response.status,
-      text
-    );
-    throw new Error(
-      `Chain summary HTTP ${response.status} for ${symbol}`
-    );
-  }
+  // Attempt 2: underlying param
+  const urlUnderlying =
+    "https://chartexchange.com/api/v1/data/options/chain-summary/" +
+    `?underlying=US:${symbol}` +
+    "&format=json" +
+    `&api_key=${apiKey}`;
 
-  const data = await response.json();
+  console.log("[CHAIN_SUMMARY_TRY_UNDERLYING]", urlUnderlying);
 
-  if (!Array.isArray(data) || data.length === 0) {
-    console.error("[CHAIN_SUMMARY_EMPTY]", symbol, data);
-    throw new Error(`Empty chain summary for ${symbol}`);
-  }
+  row = await tryFetch(urlUnderlying, symbol);
+  if (row) return row;
 
-  const row = data[0];
-
-  // Minimal validation for fields actually used
-  if (
-    row.pc_ratio === undefined ||
-    row.calls_total === undefined ||
-    row.puts_total === undefined
-  ) {
-    console.error("[CHAIN_SUMMARY_INVALID_SHAPE]", row);
-    throw new Error(`Invalid chain summary shape for ${symbol}`);
-  }
-
-  console.log("[CHAIN_SUMMARY_OK]", {
-    symbol,
-    pc_ratio: row.pc_ratio,
-    calls_total: row.calls_total,
-    puts_total: row.puts_total,
-    itm_calls: row.itm_calls,
-    itm_puts: row.itm_puts,
-    max_pain: row.max_pain
-  });
-
-  return row;
+  // Both failed → hard error
+  throw new Error(`Chain summary HTTP 400 for ${symbol}`);
 }
