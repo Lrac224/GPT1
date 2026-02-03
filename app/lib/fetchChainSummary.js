@@ -1,25 +1,25 @@
-export async function fetchChainSummary(symbol, expiration, apiKey) {
-  if (!apiKey) {
-    throw new Error("Missing ChartExchange API key");
-  }
+export async function fetchChainSummary(symbol, apiKey) {
+  if (!apiKey) throw new Error("Missing API key");
 
   const url =
     `https://chartexchange.com/api/v1/data/options/chain-summary/` +
     `?underlying=US:${symbol}` +
-    (expiration ? `&expiration=${expiration}` : "") +
     `&format=json` +
     `&api_key=${apiKey}`;
 
   const r = await fetch(url, { cache: "no-store" });
-
   if (!r.ok) {
     throw new Error(`Chain summary HTTP ${r.status} for ${symbol}`);
   }
 
   const data = await r.json();
-
   if (!Array.isArray(data) || data.length === 0) {
-    // 🔒 NORMALIZED EMPTY RESULT
+    throw new Error("Empty chain summary");
+  }
+
+  return data[0]; // front month implicitly
+}
+    // 🔒 NORMALIZED EMPTY RES............................ULT
     return {
       totalCallOI: 0,
       totalPutOI: 0,
