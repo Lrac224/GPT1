@@ -1,29 +1,25 @@
-export async function fetchChainSummary({
-  symbol,
-  expiration,
-  apiKey
-}) {
-  if (!symbol || !expiration) {
-    throw new Error("symbol and expiration are required");
-  }
+export async function fetchChainSummary(symbol, expiration, apiKey) {
+  const underlying = `US:${symbol}`;
 
   const url =
     `https://chartexchange.com/api/v1/data/options/chain-summary/` +
-    `?underlying=US:${symbol}` +
+    `?underlying=${underlying}` +
     `&expiration=${expiration}` +
     `&format=json` +
     `&api_key=${apiKey}`;
 
-  const r = await fetch(url, { cache: "no-store" });
+  try {
+    const r = await fetch(url, { cache: "no-store" });
 
-  if (!r.ok) {
-    console.error("[CHAIN_SUMMARY_ERROR]", symbol, expiration);
+    if (!r.ok) {
+      console.error("[CHAIN_FETCH_FAILED]", symbol, expiration, r.status);
+      return null;
+    }
+
+    const data = await r.json();
+    return data?.[0] ?? null;
+  } catch (err) {
+    console.error("[FETCH_ERROR]", err);
     return null;
   }
-
-  const data = await r.json();
-
-  console.log("[CHAIN_SUMMARY_LIVE]", symbol, expiration);
-
-  return data?.[0] ?? null;
 }
