@@ -1,80 +1,70 @@
 import { NextResponse } from "next/server";
+import { structuralCertaintyEngine } from "@/app/lib/structuralCertaintyEngine";
+import { dailyNarrativeBuilder } from "@/app/lib/dailyNarrativeBuilder";
+import { fetchChainSummary } from "@/app/lib/fetchChainSummary";
+import { fetchExchangeVolume } from "@/app/lib/fetchExchangeVolume";
 
-import { fetchChainSummary } from "../../../lib/fetchChainSummary";
-import { fetchExchangeVolume } from "../../../lib/fetchExchangeVolume";
-import { structuralCertaintyEngine } from "../../../lib/structuralCertaintyEngine";
-
-/**
- * POST /api/structural-certainty/daily
- * Body: { "symbols": ["IWM", "SPY", "QQQ"] }
- */
-export async function POST(req) {
+export async function GET(req) {
   try {
-    // -----------------------------
-    // Parse request body
-    // -----------------------------
-    const body = await req.json();
-    const symbols = body?.symbols;
+    const { searchParams } = new URL(req.url);
+    const symbol = searchParams.get("symbol");
 
-    if (!Array.isArray(symbols) || symbols.length === 0) {
+    if (!symbol) {
       return NextResponse.json(
-        { error: "symbols array required" },
+        { error: "Missing symbol parameter" },
         { status: 400 }
       );
     }
 
-    // -----------------------------
-    // ENV VAR CHECK (PUT IT HERE)
-    // -----------------------------
     const apiKey = process.env.CHARTEXCHANGE_API_KEY;
-
     if (!apiKey) {
       return NextResponse.json(
-        { error: "Missing CHARTEXCHANGE_API_KEY env var" },
+        { error: "Missing CHARTEXCHANGE_API_KEY" },
         { status: 500 }
       );
     }
 
-    const results = {};
-
-    // -----------------------------
-    // Per-symbol processing
-    // -----------------------------
-    for (const rawSymbol of symbols) {
-      const symbol = rawSymbol.toUpperCase();
-
-      // ---- Fetch normalized inputs ----
-      const chain = await fetchChainSummary(
-        symbol,
-        undefined, // DAILY does not depend on expiration
-        apiKey
+    // ---- REQUIRED: you must resolve expiration BEFORE chain fetch
+    const expiration = await resolveFrontMonthExpiration(symbol, apiKey);
+    if (!expiration) {
+      return NextResponse.json(
+        { error: "Failed to resolve expiration" },
+        { status: 500 }
       );
-
-      const volume = await fetchExchangeVolume(
-        symbol,
-        apiKey
-      );
-
-      // ---- Run engine ----
-      const result = structuralCertaintyEngine({ chain, volume });
-
-      results[symbol] = {
-        timeframe: "DAILY",
-        bias: result.bias,
-        invalidation: result.invalidation
-      };
     }
 
-    // -----------------------------
-    // Return batch result
-    // -----------------------------
-    return NextResponse.json(results);
+    const chain = await fetchChainSummary(symbol, expiration, apiKey);
+    const volume = await fetchExchangeVolume(symbol, apiKey);
+
+    if (!chain || !volume) {
+      return NextResponse.json(
+        { error: "Failed to fetch market data" },
+        { status: 500 }
+      );
+    }
+
+    const structuralCertainty = structuralCertaintyEngine({
+      chain,
+      volume
+    });
+
+    const dailyNarrative = dailyNarrativeBuilder({
+      symbol,
+      chain,
+      regime: structuralCertainty.regime
+    });
+
+    // ✅ THIS RETURN IS MANDATORY
+    return NextResponse.json({
+      symbol,
+      structuralCertainty,
+      dailyNarrative
+    });
 
   } catch (err) {
-    console.error("dailyCheck POST error:", err);
-
+    // ✅ THIS CATCH IS MANDATORY
     return NextResponse.json(
-      { error: err.message },
+      { error: err.message || "Unhandled error" },
       { status: 500 }
     );
   }
