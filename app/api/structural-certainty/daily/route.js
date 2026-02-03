@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
 import { fetchChainSummary } from "../../../lib/fetchChainSummary";
 import { runStructuralCertainty } from "../../../lib/structuralCertaintyEngine";
+
 const DEFAULT_SYMBOLS = ["QQQ", "SPY", "IWM"];
 
 export async function POST(req) {
   let symbols = DEFAULT_SYMBOLS;
 
   // ─────────────────────────────────────────────
-  // Parse request body (optional symbols override)
+  // Parse request body (symbols optional)
   // ─────────────────────────────────────────────
   try {
     const body = await req.json();
@@ -15,40 +16,35 @@ export async function POST(req) {
       symbols = body.symbols;
     }
   } catch (_) {
-    // report / run → defaults apply
+    // no body → report mode defaults
   }
 
   const apiKey = process.env.CHARTEXCHANGE_API_KEY;
 
   // ─────────────────────────────────────────────
-  // Hard guard: no API key = NO_TRADE (but still report)
+  // If no API key, return safe NO_TRADE report
   // ─────────────────────────────────────────────
   if (!apiKey) {
-    return NextResponse.json(
-      buildNoDataResponse(symbols, "NO_API_KEY")
-    );
+    return NextResponse.json(buildNoDataResponse(symbols, "NO_API_KEY"));
   }
 
   const results = [];
 
   // ─────────────────────────────────────────────
-  // MAIN LOOP — one symbol at a time
+  // Main execution loop
   // ─────────────────────────────────────────────
   for (const symbol of symbols) {
     try {
-      // 🔴 PROOF LOG — must appear in Vercel
+      // 🔎 PROOF: this must appear in Vercel logs
       console.log("[DAILY] fetching chain summary for", symbol);
 
       const chainSummary = await fetchChainSummary(symbol, apiKey);
 
       if (!chainSummary) {
-        results.push(
-          buildNoDataSymbolResult(symbol, "CHAIN_SUMMARY_NULL")
-        );
+        results.push(buildNoDataSymbolResult(symbol, "CHAIN_SUMMARY_NULL"));
         continue;
       }
 
-      // 🔴 PROOF LOG — confirms live data shape
       console.log("[DAILY] live OI data", symbol, {
         callsTotal: chainSummary.callsTotal,
         putsTotal: chainSummary.putsTotal,
@@ -70,15 +66,12 @@ export async function POST(req) {
       results.push(engineResult);
     } catch (err) {
       console.error("[DAILY] ERROR", symbol, err);
-
-      results.push(
-        buildNoDataSymbolResult(symbol, "FETCH_ERROR")
-      );
+      results.push(buildNoDataSymbolResult(symbol, "FETCH_ERROR"));
     }
   }
 
   // ─────────────────────────────────────────────
-  // REPORT FORMAT — list each symbol separately
+  // Final REPORT response
   // ─────────────────────────────────────────────
   return NextResponse.json({
     mode: "REPORT",
@@ -95,9 +88,7 @@ function buildNoDataResponse(symbols, reason) {
   return {
     mode: "REPORT",
     symbols,
-    results: symbols.map((s) =>
-      buildNoDataSymbolResult(s, reason)
-    ),
+    results: symbols.map((s) => buildNoDataSymbolResult(s, reason)),
   };
 }
 
