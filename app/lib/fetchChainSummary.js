@@ -1,13 +1,13 @@
 /**
  * fetchChainSummary
  *
- * Uses ChartExchange:
+ * ChartExchange endpoint:
  *   /api/v1/data/options/chain-summary
  *
  * IMPORTANT:
- * - Do NOT pass expiration
- * - This endpoint implicitly returns the nearest active expiration
- * - This matches your available API access
+ * - Uses `symbol=US:XXX` (NOT underlying)
+ * - No expiration parameter
+ * - Returns nearest/front active expiration implicitly
  */
 
 export async function fetchChainSummary(symbol, apiKey) {
@@ -21,22 +21,21 @@ export async function fetchChainSummary(symbol, apiKey) {
 
   const url =
     "https://chartexchange.com/api/v1/data/options/chain-summary/" +
-    `?underlying=US:${symbol}` +
+    `?symbol=US:${symbol}` +
     "&format=json" +
     `&api_key=${apiKey}`;
 
-  console.log("[CHAIN_SUMMARY_REQUEST]", {
-    symbol,
-    underlying: `US:${symbol}`
-  });
+  console.log("[CHAIN_SUMMARY_REQUEST]", { symbol, url });
 
   const response = await fetch(url, { cache: "no-store" });
 
   if (!response.ok) {
+    const text = await response.text();
     console.error(
       "[CHAIN_SUMMARY_HTTP_ERROR]",
       symbol,
-      response.status
+      response.status,
+      text
     );
     throw new Error(
       `Chain summary HTTP ${response.status} for ${symbol}`
@@ -52,7 +51,7 @@ export async function fetchChainSummary(symbol, apiKey) {
 
   const row = data[0];
 
-  // Minimal shape validation (defensive, not strict)
+  // Minimal validation for fields actually used
   if (
     row.pc_ratio === undefined ||
     row.calls_total === undefined ||
