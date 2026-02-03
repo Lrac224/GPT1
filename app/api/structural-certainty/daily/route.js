@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 import { fetchChainSummary } from "../../../lib/fetchChainSummary";
+import { fetchExchangeVolume } from "../../../lib/fetchExchangeVolume";
 import { computeStructuralCertainty } from "../../../lib/structuralCertaintyEngine";
 
-// ---------- Expiration resolver (weekly + holiday-safe stub) ----------
+/* -------------------------------------------------------
+   One-week authority resolver (Friday, holiday-safe stub)
+-------------------------------------------------------- */
 function getNextFriday(date = new Date()) {
   const d = new Date(date);
   const day = d.getDay(); // 0=Sun ... 5=Fri
@@ -11,7 +14,9 @@ function getNextFriday(date = new Date()) {
   return d.toISOString().slice(0, 10);
 }
 
-// ---------- Route ----------
+/* -------------------------------------------------------
+   DAILY ROUTE
+-------------------------------------------------------- */
 export async function POST(req) {
   try {
     const body = await req.json();
@@ -37,9 +42,16 @@ export async function POST(req) {
         apiKey
       );
 
+      const exchangeVolume = await fetchExchangeVolume(
+        symbol,
+        apiKey
+      );
+
       const report = computeStructuralCertainty({
         symbol,
+        expiration,
         chainSummary,
+        exchangeVolume,
         mode: "DAILY"
       });
 
@@ -48,6 +60,7 @@ export async function POST(req) {
 
     return NextResponse.json({
       mode: "REPORT",
+      authority_window: "ONE_WEEK",
       expiration,
       symbols,
       results
