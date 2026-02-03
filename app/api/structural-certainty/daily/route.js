@@ -57,29 +57,38 @@ export async function POST(req) {
   try {
     for (const symbol of symbols) {
       // ───────── Tool 1: Stress (front expiry only) ─────────
-      const chainUrl =
-        `https://chartexchange.com/api/v1/data/options/chain-summary/` +
-        `?symbol=${symbol}&format=json&api_key=${apiKey}`;
+     const chainRes = await fetch(chainUrl, { cache: "no-store" });
 
-      const chainRes = await fetch(chainUrl, { cache: "no-store" });
-      if (chainRes.ok) {
-        const chain = await chainRes.json();
-        const row = chain?.[0];
+if (!chainRes.ok) {
+  throw new Error(`ChartExchange failed: ${chainRes.status}`);
+}
 
-        if (row?.callsTotal && row?.putsTotal) {
-          response.stressMap = {
-            stress_side:
-              row.putsTotal > row.callsTotal
-                ? "PUT"
-                : row.callsTotal > row.putsTotal
-                ? "CALL"
-                : "NEUTRAL",
-            stress_location: "STRADDLED",
-            distance_to_stress: "MID",
-            authority: "HIGH",
-          };
-        }
-      }
+const chain = await chainRes.json();
+const row = chain?.[0];
+
+const calls = Number(row?.callsTotal);
+const puts  = Number(row?.putsTotal);
+
+if (Number.isFinite(calls) || Number.isFinite(puts)) {
+  response.stressMap = {
+    stress_side:
+      puts > calls ? "PUT" :
+      calls > puts ? "CALL" :
+      "NEUTRAL",
+    stress_location: "STRADDLED",
+    distance_to_stress: "MID",
+    authority: "HIGH",
+  };
+
+  response.executionGate.data_source = "LIVE_CHARTEXCHANGE";
+  response.executionGate.data_debug = {
+    callsTotal: calls,
+    putsTotal: puts,
+    maxPain: row?.maxPain ?? null,
+  };
+} else {
+  response.executionGate.data_source = "LIVE_DATA_INVALID";
+}
 
       // ───────── Tool 2: Open Resolution (price behavior) ─────────
       const quoteUrl =
