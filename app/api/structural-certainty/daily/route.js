@@ -4,6 +4,7 @@ import { structuralCertaintyEngine } from "../../../lib/structuralCertaintyEngin
 import { dailyNarrativeBuilder } from "../../../lib/dailyNarrativeBuilder";
 import { fetchChainSummary } from "../../../lib/fetchChainSummary";
 import { fetchExchangeVolume } from "../../../lib/fetchExchangeVolume";
+import { resolveFrontMonthExpiration } from "../../../lib/resolveFrontMonthExpiration";
 
 export async function GET(req) {
   try {
