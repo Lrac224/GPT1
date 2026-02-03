@@ -1,81 +1,117 @@
-openapi: 3.0.1
+openapi: 3.1.0
 info:
   title: Structural Certainty API
-  version: "1.0"
+  description: >
+    Deterministic structural options bias engine.
+    Provides regime, directional bias, confidence, drivers,
+    and tactical execution guidance.
+  version: 1.0.0
 
 servers:
   - url: https://gpt-1-mu.vercel.app
 
 paths:
   /api/structural-certainty/daily:
-    post:
-      summary: Daily structural certainty
-      operationId: dailyCertainty
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/SymbolRequest"
+    get:
+      operationId: getDailyReport
+      summary: Daily structural options bias
+      parameters:
+        - name: symbol
+          in: query
+          required: true
+          schema:
+            type: string
+            example: IWM
       responses:
         "200":
-          description: Daily regime and bias
+          description: Structural certainty report
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/CertaintyResponse"
-
-  /api/structural-certainty/swingscanner:
-    post:
-      summary: Swing permission check
-      operationId: swingCertainty
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/SymbolRequest"
-      responses:
-        "200":
-          description: Swing eligibility
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/CertaintyResponse"
+                $ref: "#/components/schemas/StructuralCertaintyResponse"
 
 components:
   schemas:
-    SymbolRequest:
+
+    StructuralCertaintyResponse:
       type: object
-      required: [symbol]
+      required:
+        - symbol
+        - regime
+        - pc_ratio
+        - max_pain
+        - bias
+        - execution
+        - invalidation
+      additionalProperties: false
       properties:
         symbol:
           type: string
           example: IWM
 
-    CertaintyResponse:
-      type: object
-      properties:
-        symbol:
-          type: string
-        mode:
-          type: string
-          enum: [DAILY, SWING]
         regime:
           type: string
-          enum: [BULL_CONTROLLED, BEAR_CONTROLLED, NEUTRAL]
+          enum:
+            - BEAR_CONTROLLED
+            - BULL_CONTROLLED
+            - MIXED
+
+        pc_ratio:
+          type: string
+          example: "3.68"
+
+        max_pain:
+          type: string
+          example: "262.00"
+
+        bias:
+          $ref: "#/components/schemas/Bias"
+
+        execution:
+          type: string
+          example: Short scalps favored; sell failed pops
+
+        invalidation:
+          type: string
+          example: PC ratio normalization or ITM dominance flip
+
+    Bias:
+      type: object
+      required:
+        - direction
+        - confidence
+        - disallowed
+        - drivers
+      additionalProperties: false
+      properties:
         direction:
           type: string
-          enum: [LONG_BIAS, SHORT_BIAS, NO_TRADE]
-        pc_ratio:
-          type: number
-        calls_total:
-          type: number
-        puts_total:
-          type: number
-        max_pain:
-          type: number
-        allowed:
-          type: boolean
-        reason:
-          type: string
+          enum:
+            - SHORT_BIAS_INTRADAY
+            - LONG_BIAS_INTRADAY
+            - NO_TRADE
+
+        confidence:
+          type: integer
+          minimum: 0
+          maximum: 100
+          example: 40
+
+        disallowed:
+          type: array
+          items:
+            type: string
+            enum:
+              - LONG
+              - SHORT
+
+        drivers:
+          type: array
+          items:
+            type: string
+            enum:
+              - heavy_put_dominance
+              - heavy_call_dominance
+              - itm_put_control
+              - itm_call_control
+              - low_structural_conviction
