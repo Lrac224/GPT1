@@ -1,13 +1,15 @@
 /**
  * Structural Certainty Engine
- * Uses ChartExchange chain-summary + exchange volume
+ * Uses ChartExchange chain-summary + short volume
  * Front-month expiration is IMPLIED by chain-summary
  */
 
-export function structuralCertaintyEngine({
+import { fetchShortVolume } from "./fetchShortVolume";
+
+export async function structuralCertaintyEngine({
   symbol,
   chain,
-  exchangeVolume
+  exchangeVolume // left untouched, not used here
 }) {
   // ---------- FAIL FAST ----------
   if (!chain) {
@@ -33,74 +35,90 @@ export function structuralCertaintyEngine({
     max_pain
   } = chain;
 
+  // ---------- FETCH SHORT VOLUME ----------
+  const shortVol = await fetchShortVolume(symbol);
+
+  let shortVolumeState = "unknown";
+  if (shortVol?.shortPct != null) {
+    if (shortVol.shortPct >= 0.45) shortVolumeState = "elevated";
+    else if (shortVol.shortPct <= 0.30) shortVolumeState = "light";
+    else shortVolumeState = "neutral";
+  }
+
   // ---------- REGIME CLASSIFICATION ----------
   let regime = "MIXED";
-  // ---------- DRIVERS ----------
-const drivers = [];
+  const drivers = [];
 
-  if (pc_ratio >= 1.6) regime = "BEAR_CONTROLLED";
-  else if (pc_ratio <= 0.65) regime = "BULL_CONTROLLED";
+  if (pc_ratio >= 1.6) {
+    regime = "BEAR_CONTROLLED";
+    drivers.push("heavy_put_dominance");
+  } else if (pc_ratio <= 0.65) {
+    regime = "BULL_CONTROLLED";
+    drivers.push("heavy_call_dominance");
+  }
 
   // ---------- DIRECTION GATE ----------
-  let direction = "NEUTRAL";
-  let disallowed = [];
+  let direction = "NO_TRADE";
+  let disallowed = ["LONG", "SHORT"];
 
   if (regime === "BEAR_CONTROLLED") {
-    direction = "SHORT_BIAS_INTRADAY";
-    disallowed = ["LONG"];
+    // Only allow bearish bias if shorts are ACTIVE
+    if (shortVolumeState === "elevated") {
+      direction = "SHORT_BIAS_INTRADAY";
+      disallowed = ["LONG"];
+      drivers.push("active_short_pressure");
+    } else {
+      drivers.push("puts_likely_hedges");
+    }
   }
 
   if (regime === "BULL_CONTROLLED") {
-    direction = "LONG_BIAS_INTRADAY";
-    disallowed = ["SHORT"];
+    // Bullish bias requires shorts to be light
+    if (shortVolumeState === "light") {
+      direction = "LONG_BIAS_INTRADAY";
+      disallowed = ["SHORT"];
+      drivers.push("low_short_supply");
+    } else {
+      drivers.push("shorts_not_exhausted");
+    }
   }
 
-  if (regime === "MIXED") {
+  // ---------- CONFIDENCE MODEL ----------
+  let confidence = 0;
+
+  // Base PC contribution
+  if (pc_ratio >= 1.6) {
+    confidence += Math.min(40, (pc_ratio - 1) * 20);
+  }
+
+  if (pc_ratio <= 0.65) {
+    confidence += Math.min(40, (1 - pc_ratio) * 20);
+  }
+
+  // Flow imbalance
+  if (calls_total > 0 && puts_total > 0) {
+    const flowImbalance =
+      Math.abs(calls_total - puts_total) /
+      (calls_total + puts_total);
+    confidence += flowImbalance * 30;
+  }
+
+  // ITM imbalance (confirmation only)
+  if (itm_calls + itm_puts > 0) {
+    const itmImbalance =
+      Math.abs(itm_calls - itm_puts) /
+      (itm_calls + itm_puts);
+    confidence += itmImbalance * 30;
+  }
+
+  confidence = Math.min(100, Math.round(confidence));
+
+  // ---------- CONFIDENCE FLOOR ----------
+  if (confidence < 12) {
     direction = "NO_TRADE";
     disallowed = ["LONG", "SHORT"];
+    drivers.push("low_structural_conviction");
   }
-
- 
- // ---------- CONFIDENCE MODEL ----------
-let confidence = 0;
-
-// Base confidence from PC ratio alone
-if (pc_ratio >= 1.6) {
-  confidence += Math.min(40, (pc_ratio - 1) * 20);
-  drivers.push("heavy_put_dominance");
-}
-
-if (pc_ratio <= 0.65) {
-  confidence += Math.min(40, (1 - pc_ratio) * 20);
-  drivers.push("heavy_call_dominance");
-}
-
-// Flow imbalance (if totals exist)
-if (calls_total > 0 && puts_total > 0) {
-  const flowImbalance =
-    Math.abs(calls_total - puts_total) /
-    (calls_total + puts_total);
-
-  confidence += flowImbalance * 30;
-}
-
-// ITM confirmation (optional boost, NOT required)
-if (itm_calls + itm_puts > 0) {
-  const itmImbalance =
-    Math.abs(itm_calls - itm_puts) /
-    (itm_calls + itm_puts);
-
-  confidence += itmImbalance * 30;
-}
-
-confidence = Math.min(100, Math.round(confidence));
-
-// ---------- CONFIDENCE FLOOR ----------
-if (confidence < 12) {
-  direction = "NO_TRADE";
-  disallowed = ["LONG", "SHORT"];
-  drivers.push("low_structural_conviction");
-}
 
   // ---------- EXECUTION MODE ----------
   let execution = "NONE";
@@ -121,6 +139,9 @@ if (confidence < 12) {
     calls_total,
     puts_total,
     max_pain,
+    pressure: {
+      short_volume: shortVolumeState
+    },
     bias: {
       direction,
       confidence,
